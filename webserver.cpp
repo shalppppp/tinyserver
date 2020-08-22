@@ -166,32 +166,40 @@ void WebServer::timer(int connfd, struct sockaddr_in client_address)
     //创建定时器，设置回调函数和超时时间，绑定用户数据，将定时器添加到链表中
     users_timer[connfd].address = client_address;
     users_timer[connfd].sockfd = connfd;
-    util_timer *timer = new util_timer;
+    std::cout<<"new connect finish11"<<std::endl;
+
+    heap_timer *timer = new heap_timer;
+    std::cout<<"new connect finish22"<<std::endl;
+
     timer->user_data = &users_timer[connfd];
     timer->cb_func = cb_func;
     time_t cur = time(NULL);
     timer->expire = cur + 3 * TIMESLOT;
     users_timer[connfd].timer = timer;
-    utils.m_timer_lst.add_timer(timer);
+    std::cout<<"new connect finish33"<<std::endl;
+
+    utils.m_timer_heap.add_timer(timer);
+    std::cout<<"new connect finish44"<<std::endl;
+
 }
 
 //若有数据传输，则将定时器往后延迟3个单位
 //并对新的定时器在链表上的位置进行调整
-void WebServer::adjust_timer(util_timer *timer)
+void WebServer::adjust_timer(heap_timer *timer)
 {
     time_t cur = time(NULL);
     timer->expire = cur + 3 * TIMESLOT;
-    utils.m_timer_lst.adjust_timer(timer);
+    utils.m_timer_heap.adjust_timer(timer);
 
     LOG_INFO("%s", "adjust timer once");
 }
 
-void WebServer::deal_timer(util_timer *timer, int sockfd)
+void WebServer::deal_timer(heap_timer *timer, int sockfd)
 {
     timer->cb_func(&users_timer[sockfd]);
     if (timer)
     {
-        utils.m_timer_lst.del_timer(timer);
+        utils.m_timer_heap.del_timer(timer);
     }
 
     LOG_INFO("close fd %d", users_timer[sockfd].sockfd);
@@ -201,6 +209,7 @@ bool WebServer::dealclinetdata()
 {
     struct sockaddr_in client_address;
     socklen_t client_addrlength = sizeof(client_address);
+    std::cout<<"deal with client"<<"lisiten"<<m_LISTENTrigmode<<std::endl;
     if (0 == m_LISTENTrigmode)
     {
         int connfd = accept(m_listenfd, (struct sockaddr *)&client_address, &client_addrlength);
@@ -215,7 +224,10 @@ bool WebServer::dealclinetdata()
             LOG_ERROR("%s", "Internal server busy");
             return false;
         }
+        std::cout<<"new connect finish"<<std::endl;
         timer(connfd, client_address);
+        std::cout<<"timer finish"<<std::endl;
+
     }
 
     else
@@ -279,7 +291,7 @@ bool WebServer::dealwithsignal(bool &timeout, bool &stop_server)
 
 void WebServer::dealwithread(int sockfd)
 {
-    util_timer *timer = users_timer[sockfd].timer;
+    heap_timer *timer = users_timer[sockfd].timer;
 
     //reactor
     if (1 == m_actormodel)
@@ -330,7 +342,7 @@ void WebServer::dealwithread(int sockfd)
 
 void WebServer::dealwithwrite(int sockfd)
 {
-    util_timer *timer = users_timer[sockfd].timer;
+    heap_timer *timer = users_timer[sockfd].timer;
     //reactor
     if (1 == m_actormodel)
     {
@@ -382,6 +394,7 @@ void WebServer::eventLoop()
     while (!stop_server)
     {
         int number = epoll_wait(m_epollfd, events, MAX_EVENT_NUMBER, -1);
+        std::cout<<"epollwait finish"<<" "<<number<<std::endl;
         if (number < 0 && errno != EINTR)
         {
             LOG_ERROR("%s", "epoll failure");
@@ -391,19 +404,27 @@ void WebServer::eventLoop()
         for (int i = 0; i < number; i++)
         {
             int sockfd = events[i].data.fd;
+            std::cout<<"getsocfd finish"<<std::endl;
 
             //处理新到的客户连接
             if (sockfd == m_listenfd)
             {
+                std::cout<<"new connnect"<<std::endl;
+
                 bool flag = dealclinetdata();
                 if (false == flag)
                     continue;
+                std::cout<<"new connnect finish"<<std::endl;
             }
             else if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR))
             {
                 //服务器端关闭连接，移除对应的定时器
-                util_timer *timer = users_timer[sockfd].timer;
+                std::cout<<"timer start"<<std::endl;
+
+                heap_timer *timer = users_timer[sockfd].timer;
                 deal_timer(timer, sockfd);
+                std::cout<<"timer finish"<<std::endl;
+
             }
             //处理信号
             else if ((sockfd == m_pipefd[0]) && (events[i].events & EPOLLIN))
@@ -422,6 +443,8 @@ void WebServer::eventLoop()
                 dealwithwrite(sockfd);
             }
         }
+        std::cout<<"handle socket finish"<<std::endl;
+
         if (timeout)
         {
             utils.timer_handler();
